@@ -1,19 +1,23 @@
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 import 'package:flame/experimental.dart';
+import 'package:flame/flame.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/services.dart';
-import 'package:mario_game/constants/animation_configs.dart';
+import 'package:flutter/foundation.dart'; // ADD THIS LINE
 import 'package:mario_game/constants/globals.dart';
 import 'package:mario_game/games/super_mario_bros_game.dart';
 import 'package:mario_game/objects/platform.dart';
+import 'package:mario_game/utils/face_storage.dart';
 
 enum MarioAnimationState { idle, walking, jumping }
 
-class Mario extends SpriteAnimationGroupComponent<MarioAnimationState>
+class Mario extends PositionComponent
     with CollisionCallbacks, KeyboardHandler, HasGameRef<SuperMarioBrosGame> {
   final double _gravity = 15;
-  final Vector2 velocity = Vector2.zero(); //represent direction and speed
+  final Vector2 velocity = Vector2.zero();
 
   final Vector2 _up = Vector2(0, -1);
   bool _jumpInput = false;
@@ -29,29 +33,45 @@ class Mario extends SpriteAnimationGroupComponent<MarioAnimationState>
 
   double _hAxisInput = 0;
 
-  //👇_minClamp and _maxClamp are pretty much the _levelbounds that we specified, see line 25
-  //basically
-  late Vector2
-  _minClamp; //minimun level coordinate that mario can go in a level
-  late Vector2
-  _maxClamp; //maximum level coordinates that mario can go in a level
+  late Vector2 _minClamp;
+  late Vector2 _maxClamp;
 
   double _jumpSpeed = 400;
+
+  // Animation state
+  MarioAnimationState _currentState = MarioAnimationState.idle;
+
+  // Sprite components
+  late SpriteComponent _headSprite;
+  late SpriteComponent _bodySprite;
+
+  // Body sprites for different states
+  late Sprite _bodyIdle;
+  late Sprite _bodyWalk;
+  late Sprite _bodyJump;
+
+  // Custom face
+  bool _useCustomFace = false;
+  Sprite? _customFaceSprite;
+
+  // Walking animation timing
+  double _walkAnimationTimer = 0;
+  final double _walkAnimationSpeed = 0.15; // seconds per frame
+  bool _showWalkFrame = false;
 
   Mario({required Vector2 position, required Rectangle levelBounds})
     : super(
         position: position,
-        size: Vector2(Globals.tileSize, Globals.tileSize),
-        anchor: Anchor.center,
+        size: Vector2(Globals.tileSize * 2, Globals.tileSize * 2),
+        anchor: Anchor.topCenter,
       ) {
     debugMode = true;
-    //we do size/2 because we need to account for
     _minClamp = levelBounds.topLeft + (size / 2);
     _maxClamp = levelBounds.bottomRight + (size / 2);
 
     add(CircleHitbox());
   }
-  //The GAME LOOP this method would be called appx every 0.1 second
+
   @override
   void update(double dt) {
     super.update(dt);
@@ -63,7 +83,8 @@ class Mario extends SpriteAnimationGroupComponent<MarioAnimationState>
     speedUpdate();
     facingDirectionUpdate();
     jumpUpdate();
-    marioAnimationUpdate();
+    marioAnimationUpdate(dt);
+    updateSpritePositions();
   }
 
   @override
@@ -72,21 +93,17 @@ class Mario extends SpriteAnimationGroupComponent<MarioAnimationState>
 
     _hAxisInput += keysPressed.contains(LogicalKeyboardKey.arrowLeft) ? -1 : 0;
     _hAxisInput += keysPressed.contains(LogicalKeyboardKey.arrowRight) ? 1 : 0;
-    _jumpInput = keysPressed.contains(LogicalKeyboardKey.space);
 
-    void _pause() {
+    void pauseGame() {
       FlameAudio.play(Globals.pauseSFX);
-
       _paused ? gameRef.resumeEngine() : gameRef.pauseEngine();
-
       _paused = !_paused;
     }
 
     if (keysPressed.contains(LogicalKeyboardKey.keyA)) {
-      _pause();
+      pauseGame();
     }
 
-    // ✅ Only set _jumpInput to true on key DOWN, not while held
     if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.space) {
       _jumpInput = true;
     } else if (event is KeyUpEvent &&
@@ -107,8 +124,20 @@ class Mario extends SpriteAnimationGroupComponent<MarioAnimationState>
   void jump() {
     velocity.y -= _jumpSpeed;
     isOnGround = false;
-
     FlameAudio.play(Globals.jumpSmallSFX);
+  }
+
+  // Called from on-screen buttons
+  void moveLeft() {
+    _hAxisInput = -1;
+  }
+
+  void moveRight() {
+    _hAxisInput = 1;
+  }
+
+  void stop() {
+    _hAxisInput = 0;
   }
 
   void speedUpdate() {
@@ -122,21 +151,23 @@ class Mario extends SpriteAnimationGroupComponent<MarioAnimationState>
   }
 
   void facingDirectionUpdate() {
-    if (_hAxisInput > 0) {
-      isFacingRight = true;
-    } else {
-      isFacingRight = false;
-    }
+    bool shouldFaceRight = _hAxisInput > 0;
+    bool shouldFaceLeft = _hAxisInput < 0;
 
-    if ((_hAxisInput > 0 && scale.x < 0) || (_hAxisInput < 0 && scale.x > 0)) {
-      flipHorizontallyAroundCenter();
+    if (shouldFaceRight && !isFacingRight) {
+      isFacingRight = true;
+      _headSprite.flipHorizontallyAroundCenter();
+      _bodySprite.flipHorizontallyAroundCenter();
+    } else if (shouldFaceLeft && isFacingRight) {
+      isFacingRight = false;
+      _headSprite.flipHorizontallyAroundCenter();
+      _bodySprite.flipHorizontallyAroundCenter();
     }
   }
 
   void velocityUpdate() {
     velocity.y += _gravity;
     velocity.y = velocity.y.clamp(-_jumpSpeed, 150);
-
     velocity.x = _hAxisInput * _currentSpeed;
   }
 
@@ -148,40 +179,107 @@ class Mario extends SpriteAnimationGroupComponent<MarioAnimationState>
     position.y = position.y.clamp(_minClamp.y, _maxClamp.y);
   }
 
-  void marioAnimationUpdate() {
+  void marioAnimationUpdate(double dt) {
+    MarioAnimationState newState;
+
     if (!isOnGround) {
-      current = MarioAnimationState.jumping;
+      newState = MarioAnimationState.jumping;
     } else if (_hAxisInput < 0 || _hAxisInput > 0) {
-      current = MarioAnimationState.walking;
+      newState = MarioAnimationState.walking;
+
+      // Update walking animation timer
+      _walkAnimationTimer += dt;
+      if (_walkAnimationTimer >= _walkAnimationSpeed) {
+        _walkAnimationTimer = 0;
+        _showWalkFrame = !_showWalkFrame;
+      }
     } else {
-      current = MarioAnimationState.idle;
+      newState = MarioAnimationState.idle;
+      _walkAnimationTimer = 0;
+      _showWalkFrame = false;
     }
+
+    // Update body sprite if state changed or walking animation frame changed
+    if (_currentState != newState ||
+        (newState == MarioAnimationState.walking && _walkAnimationTimer == 0)) {
+      _currentState = newState;
+      updateBodySprite();
+    }
+  }
+
+  void updateBodySprite() {
+    switch (_currentState) {
+      case MarioAnimationState.idle:
+        _bodySprite.sprite = _bodyIdle;
+        break;
+      case MarioAnimationState.walking:
+        // Alternate between idle and walk sprite
+        _bodySprite.sprite = _showWalkFrame ? _bodyWalk : _bodyIdle;
+        break;
+      case MarioAnimationState.jumping:
+        _bodySprite.sprite = _bodyJump;
+        break;
+    }
+  }
+
+  void updateSpritePositions() {
+    // Head is on top half
+    _headSprite.position = Vector2(0, -size.y / 4);
+    // Body is on bottom half
+    _bodySprite.position = Vector2(0, size.y / 4);
   }
 
   @override
   Future<void> onLoad() async {
-    final SpriteAnimation idle = await AnimationConfigs.mario
-        .idle(); //idle position me default rahega that's why pahle se load kar rahe hai
-    final SpriteAnimation walking = await AnimationConfigs.mario.walking();
-    final SpriteAnimation jumping = await AnimationConfigs.mario.jumping();
+    // Load body sprites
+    _bodyIdle = await Sprite.load('mario_body_idle.png');
+    _bodyWalk = await Sprite.load('mario_body_walk.png');
+    _bodyJump = await Sprite.load('mario_body_jump.png');
 
-    //now we are gonna map each of the animation states from enum(idle, jump, walking) to their respective animations
-    animations = {
-      MarioAnimationState.idle: idle,
-      MarioAnimationState.walking: walking,
-      MarioAnimationState.jumping: jumping,
-    };
+    // Check if custom face exists
+    final hasCustom = await FaceStorage.hasCustomFace();
+    if (hasCustom) {
+      final facePath = await FaceStorage.getFacePath();
+      if (facePath != null && File(facePath).existsSync()) {
+        _useCustomFace = true;
+        final bytes = await File(facePath).readAsBytes();
+        final codec = await ui.instantiateImageCodec(bytes);
+        final frame = await codec.getNextFrame();
+        _customFaceSprite = Sprite(frame.image);
+      }
+    }
 
-    current = MarioAnimationState.idle;
+    // Load default head sprite if no custom face
+    if (!_useCustomFace) {
+      final headSprite = await Sprite.load('mario_head.png');
+      _customFaceSprite = headSprite;
+    }
+
+    // Create head componentx
+    _headSprite = SpriteComponent(
+      sprite: _customFaceSprite,
+      size: Vector2(size.x * 1.2, size.y * 0.75),
+      anchor: Anchor.center,
+    );
+
+    // Create body component
+    _bodySprite = SpriteComponent(
+      sprite: _bodyIdle,
+      size: Vector2(size.x, size.y / 2),
+      anchor: Anchor.center,
+    );
+
+    add(_headSprite);
+    add(_bodySprite);
+
+    updateSpritePositions();
 
     return super.onLoad();
   }
 
-  //In this function we would know when mario collides with an object, more importantly which kind of object
   @override
   void onCollision(Set<Vector2> intersectionPoints, PositionComponent other) {
     super.onCollision(intersectionPoints, other);
-    //To determine if mario is hitting/colliding with a platform we would do this
     if (other is Platform) {
       if (intersectionPoints.length == 2) {
         platformPositionCheck(intersectionPoints);
@@ -189,8 +287,6 @@ class Mario extends SpriteAnimationGroupComponent<MarioAnimationState>
     }
   }
 
-  //method below is called when mario collides with a platform. basically a collision check
-  //this method is a safety method defined to check how deep in the mario circle has entered into the platform & push it back
   void platformPositionCheck(Set<Vector2> intersectionPoints) {
     final Vector2 mid =
         (intersectionPoints.elementAt(0) + intersectionPoints.elementAt(1)) / 2;
@@ -204,5 +300,22 @@ class Mario extends SpriteAnimationGroupComponent<MarioAnimationState>
     }
 
     position += collisionNormal.scaled(penetrationLength);
+  }
+
+  // Reload face (call this after user picks new face)
+  // Reload face (call this after user picks new face)
+  Future<void> reloadFace() async {
+    final hasCustom = await FaceStorage.hasCustomFace();
+    if (hasCustom) {
+      final facePath = await FaceStorage.getFacePath();
+      if (facePath != null && File(facePath).existsSync()) {
+        final bytes = await File(facePath).readAsBytes();
+        final codec = await ui.instantiateImageCodec(bytes);
+        final frame = await codec.getNextFrame();
+        _customFaceSprite = Sprite(frame.image);
+        _headSprite.sprite = _customFaceSprite;
+        _useCustomFace = true;
+      }
+    }
   }
 }

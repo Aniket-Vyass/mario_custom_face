@@ -42,9 +42,12 @@ class LevelComponent extends Component with HasGameRef<SuperMarioBrosGame> {
     createActors(level.tileMap);
     createPlatforms(level.tileMap);
 
-    _setupCamera();
+    // ❌ REMOVE _setupCamera() from here
 
     await super.onLoad();
+
+    // ✅ ADD camera AFTER everything is added
+    _setupCamera();
   }
 
   void createBlocks(RenderableTiledMap tileMap) {
@@ -134,20 +137,13 @@ class LevelComponent extends Component with HasGameRef<SuperMarioBrosGame> {
   }
 
   void _setupCamera() {
-    final cameraOffset = Vector2(
-      (gameRef.size.x / 2) / gameRef.cameraComponent.viewfinder.zoom,
-      (gameRef.size.y / 2) / gameRef.cameraComponent.viewfinder.zoom,
-    );
+    // Camera anchor center rakho (landscape ke liye important)
+    gameRef.cameraComponent.viewfinder.anchor = Anchor.center;
 
-    // Add half of Mario's size to center on him
-    final marioCenter = _mario.position + (_mario.size / 2);
+    // Mario ko follow karo (X + Y dono)
+    gameRef.cameraComponent.follow(_mario, verticalOnly: false, maxSpeed: 1000);
 
-    gameRef.cameraComponent.viewfinder.position = marioCenter - cameraOffset;
-
-    gameRef.cameraComponent.follow(_mario, maxSpeed: 1000);
-
-    gameRef.cameraComponent.setBounds(
-      Rectangle.fromPoints(_levelBounds.topRight, _levelBounds.topLeft),
-    );
+    // Camera ko level ke andar hi rakho
+    gameRef.cameraComponent.setBounds(_levelBounds);
   }
 }
