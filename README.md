@@ -38,7 +38,8 @@ The user’s image is processed and injected into the game **while the game is r
 - Dart
 - Custom sprite sheets
 - Image processing & scaling
-
+- Tiled map integration 
+- Collision handling game (active & passive collisions)
 ---
 
 ## 📸 Demo
