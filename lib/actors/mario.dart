@@ -62,12 +62,12 @@ class Mario extends PositionComponent
   Mario({required Vector2 position, required Rectangle levelBounds})
     : super(
         position: position,
-        size: Vector2(Globals.tileSize * 2, Globals.tileSize * 2),
+        size: Vector2(Globals.tileSize, Globals.tileSize),
         anchor: Anchor.topCenter,
       ) {
     debugMode = true;
-    _minClamp = levelBounds.topLeft + (size / 2);
-    _maxClamp = levelBounds.bottomRight + (size / 2);
+    _minClamp = levelBounds.topLeft;
+    _maxClamp = levelBounds.bottomRight;
 
     add(CircleHitbox());
   }
