@@ -62,7 +62,10 @@ class Mario extends PositionComponent
   Mario({required Vector2 position, required Rectangle levelBounds})
     : super(
         position: position,
-        size: Vector2(Globals.tileSize, Globals.tileSize),
+        size: Vector2(
+          Globals.tileSize * 2,
+          Globals.tileSize * 2,
+        ), //Change made here
         anchor: Anchor.topCenter,
       ) {
     debugMode = true;

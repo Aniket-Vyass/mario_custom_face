@@ -8,7 +8,8 @@ import 'package:mario_game/games/super_mario_bros_game.dart';
 
 class Goomba extends SpriteAnimationComponent
     with HasGameReference<SuperMarioBrosGame>, CollisionCallbacks {
-  final double _speed = 50;
+  final double _speed =
+      49; //was 50 changed to 49 to see if it helps with goomba stuttering
 
   Goomba({required Vector2 position})
     : super(
