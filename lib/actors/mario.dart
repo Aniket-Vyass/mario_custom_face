@@ -3,10 +3,8 @@ import 'dart:ui' as ui;
 import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 import 'package:flame/experimental.dart';
-import 'package:flame/flame.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart'; // ADD THIS LINE
 import 'package:mario_game/constants/globals.dart';
 import 'package:mario_game/games/super_mario_bros_game.dart';
 import 'package:mario_game/objects/platform.dart';
@@ -16,7 +14,7 @@ enum MarioAnimationState { idle, walking, jumping }
 
 class Mario extends PositionComponent
     with CollisionCallbacks, KeyboardHandler, HasGameRef<SuperMarioBrosGame> {
-  final double _gravity = 15;
+  final double _gravity = 1000;
   final Vector2 velocity = Vector2.zero();
 
   final Vector2 _up = Vector2(0, -1);
@@ -36,7 +34,7 @@ class Mario extends PositionComponent
   late Vector2 _minClamp;
   late Vector2 _maxClamp;
 
-  double _jumpSpeed = 400;
+  double _jumpSpeed = 450;
 
   // Animation state
   MarioAnimationState _currentState = MarioAnimationState.idle;
@@ -63,8 +61,8 @@ class Mario extends PositionComponent
     : super(
         position: position,
         size: Vector2(
-          Globals.tileSize * 2,
-          Globals.tileSize * 2,
+          Globals.tileSize * 1,
+          Globals.tileSize * 1,
         ), //Change made here
         anchor: Anchor.topCenter,
       ) {
@@ -72,21 +70,28 @@ class Mario extends PositionComponent
     _minClamp = levelBounds.topLeft;
     _maxClamp = levelBounds.bottomRight;
 
-    add(CircleHitbox());
+    // Center the hitbox relative to topCenter anchor
+    add(
+      CircleHitbox()
+        ..position = Vector2(0, size.y / 2)
+        ..anchor = Anchor.center,
+    );
   }
 
   @override
   void update(double dt) {
     super.update(dt);
+    // Clamp dt to prevent massive physics jumps, but don't return so the game doesn't freeze
+    final double clampedDt = dt.clamp(0, 0.05);
 
-    if (dt > 0.05) return;
-
-    velocityUpdate();
-    positionUpdate(dt);
+    isOnGround =
+        false; // Reset every frame; collision will set it back to true if touching ground
+    velocityUpdate(clampedDt);
+    positionUpdate(clampedDt);
     speedUpdate();
     facingDirectionUpdate();
     jumpUpdate();
-    marioAnimationUpdate(dt);
+    marioAnimationUpdate(clampedDt);
     updateSpritePositions();
   }
 
@@ -168,9 +173,9 @@ class Mario extends PositionComponent
     }
   }
 
-  void velocityUpdate() {
-    velocity.y += _gravity;
-    velocity.y = velocity.y.clamp(-_jumpSpeed, 150);
+  void velocityUpdate(double dt) {
+    velocity.y += _gravity * dt;
+    velocity.y = velocity.y.clamp(-_jumpSpeed, 500);
     velocity.x = _hAxisInput * _currentSpeed;
   }
 
@@ -298,8 +303,10 @@ class Mario extends PositionComponent
     double penetrationLength = (size.x / 2) - collisionNormal.length;
     collisionNormal.normalize();
 
-    if (_up.dot(collisionNormal) > 0.9) {
+    // Dot product > 0.7 is generous for "mostly vertical" ground detection
+    if (_up.dot(collisionNormal) > 0.7) {
       isOnGround = true;
+      velocity.y = 0;
     }
 
     position += collisionNormal.scaled(penetrationLength);
