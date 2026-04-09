@@ -137,13 +137,17 @@ class LevelComponent extends Component with HasGameRef<SuperMarioBrosGame> {
   }
 
   void _setupCamera() {
-    // Camera anchor center rakho (landscape ke liye important)
-    gameRef.cameraComponent.viewfinder.anchor = Anchor.center;
+    // Positioning Mario lower (80% height) instead of dead-center.
+    gameRef.cameraComponent.viewfinder.anchor = const Anchor(0.5, 0.8);
 
-    // Mario ko follow karo (X + Y dono)
-    gameRef.cameraComponent.follow(_mario, verticalOnly: false, maxSpeed: 1000);
+    // Locking camera horizontally only, with snap enabled for perfect stabilization.
+    gameRef.cameraComponent.follow(
+      _mario,
+      horizontalOnly: true,
+      snap: true,
+    );
 
-    // Camera ko level ke andar hi rakho
+    // Keep camera within level bounds.
     gameRef.cameraComponent.setBounds(_levelBounds);
   }
 }
