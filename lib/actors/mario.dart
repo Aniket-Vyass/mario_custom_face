@@ -14,7 +14,7 @@ enum MarioAnimationState { idle, walking, jumping }
 
 class Mario extends PositionComponent
     with CollisionCallbacks, KeyboardHandler, HasGameRef<SuperMarioBrosGame> {
-  final double _gravity = 1000;
+  final double _gravity = 15;
   final Vector2 velocity = Vector2.zero();
 
   final Vector2 _up = Vector2(0, -1);
@@ -34,7 +34,7 @@ class Mario extends PositionComponent
   late Vector2 _minClamp;
   late Vector2 _maxClamp;
 
-  double _jumpSpeed = 450;
+  double _jumpSpeed = 400;
 
   // Animation state
   MarioAnimationState _currentState = MarioAnimationState.idle;
